@@ -2,6 +2,6 @@
   "version": 2,
   "routes": [
     { "handle": "filesystem" }, 
-    { "src": "/(.*)", "dest": "/$1" }
+    { "src": "^/$", "dest": "/index.html" }
   ]
 }
