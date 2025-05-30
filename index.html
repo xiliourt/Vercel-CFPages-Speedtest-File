@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vercel Deployment Speed Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .metric-card {
+            @apply bg-white p-6 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl;
+        }
+        .metric-title {
+            @apply text-sm font-medium text-gray-500 mb-1;
+        }
+        .metric-value {
+            @apply text-3xl font-semibold text-gray-800;
+        }
+        .metric-unit {
+            @apply text-sm font-medium text-gray-500 ml-1;
+        }
+        .status-dot { /* Kept for potential future use, not currently used */
+            @apply w-3 h-3 rounded-full inline-block mr-2;
+        }
+        .btn-primary {
+            @apply bg-black text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-gray-800 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed;
+        }
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-left: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .info-box {
+            @apply bg-blue-50 border border-blue-200 p-4 rounded-lg text-sm text-blue-700 mb-6;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="w-full max-w-2xl mx-auto">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-gray-800">Vercel Deployment Speed Test</h1>
+            <p class="text-gray-600 mt-2">Measure your connection speed to this Vercel deployment.</p>
+        </header>
+
+        <div class="info-box">
+            <h3 class="font-semibold text-blue-800 mb-1">Important Setup for Accurate Testing:</h3>
+            <p>For the <strong>Download Speed</strong> test to work correctly, create a file named <code class="bg-blue-100 px-1 rounded font-mono">test-file-1mb.dat</code> in your Vercel project's <code class="bg-blue-100 px-1 rounded font-mono">public</code> directory. This file can have any content, but its size should be approximately 1MB to match the test configuration.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="metric-card">
+                <h2 class="metric-title">Latency to This Deployment</h2>
+                <div class="flex items-baseline">
+                    <span id="latencyValue" class="metric-value">--</span>
+                    <span class="metric-unit">ms</span>
+                </div>
+                <p id="latencyStatus" class="text-xs text-gray-400 mt-1">Waiting to test...</p>
+            </div>
+            <div class="metric-card">
+                <h2 class="metric-title">Download Speed from This Deployment</h2>
+                <div class="flex items-baseline">
+                    <span id="downloadValue" class="metric-value">--</span>
+                    <span class="metric-unit">Mbps</span>
+                </div>
+                <p id="downloadStatus" class="text-xs text-gray-400 mt-1">Waiting to test...</p>
+            </div>
+        </div>
+
+        <div class="text-center mb-8">
+            <button id="startTestBtn" class="btn-primary text-lg">
+                Start Test
+                <span id="loadingIndicator" class="hidden loader"></span>
+            </button>
+        </div>
+        
+        <div id="overallStatus" class="text-center text-gray-700 mb-6"></div>
+
+        <div class="bg-white p-6 rounded-xl shadow-lg text-sm text-gray-700">
+            <h3 class="font-semibold text-gray-800 mb-2">How this works:</h3>
+            <ul class="list-disc list-inside space-y-1">
+                <li><strong>Latency:</strong> Measures the round-trip time for a small request to the root of this Vercel deployment (<code class="bg-gray-200 px-1 rounded" id="latencyTargetDisplay">your-deployment-url.vercel.app</code>).</li>
+                <li><strong>Download Speed:</strong> Measures the time to download a sample file (<code class="bg-gray-200 px-1 rounded">/test-file-1mb.dat</code>) directly from this Vercel deployment. Assumes a <strong>1MB file</strong> as configured.</li>
+                <li>Multiple samples are taken for both tests and averaged for more stable results.</li>
+                <li>Cache-busting techniques are used to ensure fresh data is requested.</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        // For latency, we test against the current deployment's origin.
+        const LATENCY_TEST_URL = window.location.origin; 
+        const LATENCY_SAMPLES = 5; // Number of latency tests to average
+
+        // For download, use a file hosted on this Vercel deployment.
+        // IMPORTANT: User must create 'test-file-1mb.dat' in their /public directory.
+        const DOWNLOAD_FILE_URL = '/test-file-1mb.dat'; 
+        const DOWNLOAD_FILE_SIZE_BYTES = 1 * 1024 * 1024; // 1MB. Adjust if your test file is different.
+        const DOWNLOAD_SAMPLES = 3; // Number of download tests to average
+
+        // UI Elements
+        const latencyValueEl = document.getElementById('latencyValue');
+        const latencyStatusEl = document.getElementById('latencyStatus');
+        const downloadValueEl = document.getElementById('downloadValue');
+        const downloadStatusEl = document.getElementById('downloadStatus');
+        const startTestBtn = document.getElementById('startTestBtn');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const overallStatusEl = document.getElementById('overallStatus');
+        const latencyTargetDisplayEl = document.getElementById('latencyTargetDisplay');
+
+        // Update latency target display dynamically
+        if (latencyTargetDisplayEl) {
+            latencyTargetDisplayEl.textContent = window.location.hostname;
+        }
+
+
+        /**
+         * Measures latency to a given URL (typically this deployment's origin).
+         * @param {string} baseUrl - The base URL to test latency against (e.g., window.location.origin).
+         * @param {number} samples - Number of samples to take.
+         * @returns {Promise<number>} Average latency in milliseconds, or NaN on failure.
+         */
+        async function measureLatency(baseUrl, samples) {
+            let totalLatency = 0;
+            let successfulSamples = 0;
+            latencyStatusEl.textContent = `Testing latency (0/${samples})...`;
+
+            for (let i = 0; i < samples; i++) {
+                const startTime = performance.now();
+                try {
+                    // Add a cache-busting parameter. Fetch the root path.
+                    const testUrl = `${baseUrl}/?t=${new Date().getTime()}&sample=${i}`;
+                    // For same-origin, 'cors' mode is default and appropriate.
+                    // HEAD request to the root of the deployment.
+                    // Note: If the root path is very heavy or doesn't support HEAD well, 
+                    // a dedicated tiny file (e.g., /ping.txt) might be even better for pure network latency.
+                    const response = await fetch(testUrl, { method: 'HEAD', cache: 'no-store' });
+                    if (!response.ok) {
+                        // Log non-OK responses but still count the time if a response was received.
+                        // This might happen for redirects or specific server configurations.
+                        console.warn(`Latency test sample ${i + 1} received non-OK status: ${response.status}`);
+                    }
+                    const endTime = performance.now();
+                    totalLatency += (endTime - startTime);
+                    successfulSamples++;
+                } catch (error) {
+                    console.error(`Latency test sample ${i + 1} failed:`, error);
+                }
+                latencyStatusEl.textContent = `Testing latency (${successfulSamples}/${samples})...`;
+                if (i < samples - 1) { // Avoid delay after the last sample
+                    await new Promise(resolve => setTimeout(resolve, 200)); // Small delay between samples
+                }
+            }
+
+            if (successfulSamples === 0) {
+                latencyStatusEl.textContent = 'Latency test failed.';
+                return NaN; 
+            }
+            
+            const averageLatency = totalLatency / successfulSamples;
+            latencyStatusEl.textContent = `Latency test complete. ${successfulSamples} samples.`;
+            return averageLatency;
+        }
+
+        /**
+         * Measures download speed from a given URL (relative path to a file on this deployment).
+         * @param {string} fileUrl - The relative URL of the file to download (e.g., '/test-file-1mb.dat').
+         * @param {number} fileSizeInBytes - The size of the file in bytes.
+         * @param {number} samples - Number of samples to take.
+         * @returns {Promise<number>} Average download speed in Mbps, or NaN on failure.
+         */
+        async function measureDownloadSpeed(fileUrl, fileSizeInBytes, samples) {
+            let totalSpeedMbps = 0;
+            let successfulSamples = 0;
+            downloadStatusEl.textContent = `Testing download (0/${samples})...`;
+
+            for (let i = 0; i < samples; i++) {
+                const startTime = performance.now();
+                try {
+                    // Add a cache-busting parameter
+                    const cacheBusterUrl = `${fileUrl}?r=${Math.random()}&t=${new Date().getTime()}&sample=${i}`;
+                    const response = await fetch(cacheBusterUrl, { cache: 'no-store', mode: 'cors' }); // mode: 'cors' is default for same-origin
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status} for ${cacheBusterUrl}`);
+                    }
+                    await response.arrayBuffer(); // Consume the response body
+                    const endTime = performance.now();
+                    
+                    const durationSeconds = (endTime - startTime) / 1000;
+                    if (durationSeconds <= 0) { // Check for zero or negative duration
+                        console.warn(`Download sample ${i+1} had non-positive duration: ${durationSeconds}s. Skipping.`);
+                        continue; 
+                    }
+
+                    const speedMbps = (fileSizeInBytes * 8) / durationSeconds / 1000000;
+                    totalSpeedMbps += speedMbps;
+                    successfulSamples++;
+                } catch (error) {
+                    console.error(`Download test sample ${i + 1} failed:`, error);
+                    downloadStatusEl.textContent = `Download sample ${i+1} error. Check console.`;
+                }
+                // Update status after each attempt or if loop continues after error
+                if (successfulSamples < samples) {
+                     downloadStatusEl.textContent = `Testing download (${successfulSamples}/${samples})...`;
+                }
+                if (i < samples - 1) { // Avoid delay after the last sample
+                    await new Promise(resolve => setTimeout(resolve, 200)); // Small delay
+                }
+            }
+
+            if (successfulSamples === 0) {
+                downloadStatusEl.textContent = 'Download test failed. Ensure test file exists at '+ fileUrl;
+                return NaN;
+            }
+
+            const averageSpeedMbps = totalSpeedMbps / successfulSamples;
+            downloadStatusEl.textContent = `Download test complete. ${successfulSamples} samples.`;
+            return averageSpeedMbps;
+        }
+
+        /**
+         * Starts the speed test.
+         */
+        async function startTest() {
+            startTestBtn.disabled = true;
+            loadingIndicator.classList.remove('hidden');
+            overallStatusEl.textContent = 'Test in progress...';
+
+            // Reset UI
+            latencyValueEl.textContent = '--';
+            downloadValueEl.textContent = '--';
+            latencyStatusEl.textContent = 'Preparing latency test...';
+            downloadStatusEl.textContent = 'Preparing download test... (Ensure test-file-1mb.dat is in /public)';
+
+            // --- Latency Test ---
+            overallStatusEl.textContent = 'Measuring latency to this deployment...';
+            const avgLatency = await measureLatency(LATENCY_TEST_URL, LATENCY_SAMPLES);
+            if (!isNaN(avgLatency)) {
+                latencyValueEl.textContent = avgLatency.toFixed(0);
+            } else {
+                latencyValueEl.textContent = 'Error';
+                latencyStatusEl.textContent = 'Latency test failed. Check console.';
+            }
+            
+            // --- Download Test ---
+            overallStatusEl.textContent = 'Measuring download speed from this deployment...';
+            const avgDownloadSpeed = await measureDownloadSpeed(DOWNLOAD_FILE_URL, DOWNLOAD_FILE_SIZE_BYTES, DOWNLOAD_SAMPLES);
+            if (!isNaN(avgDownloadSpeed)) {
+                downloadValueEl.textContent = avgDownloadSpeed.toFixed(2);
+            } else {
+                downloadValueEl.textContent = 'Error';
+                // downloadStatusEl text is already set by measureDownloadSpeed on failure
+            }
+
+            startTestBtn.disabled = false;
+            loadingIndicator.classList.add('hidden');
+            if (isNaN(avgLatency) || isNaN(avgDownloadSpeed)) {
+                 overallStatusEl.textContent = 'Test complete with errors. Check individual status and console.';
+            } else {
+                overallStatusEl.textContent = 'Test complete!';
+            }
+        }
+
+        // Event Listener
+        startTestBtn.addEventListener('click', startTest);
+
+    </script>
+</body>
+</html>
