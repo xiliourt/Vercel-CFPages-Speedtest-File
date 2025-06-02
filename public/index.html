@@ -110,7 +110,7 @@
                 const startTime = performance.now();
                 try {
                     // Add a cache-busting parameter. Fetch the root path.
-                    const testUrl = `${baseUrl}/?t=${new Date().getTime()}&sample=${i}`;
+                    const testUrl = `${baseUrl}?t=${new Date().getTime()}&sample=${i}`;
                     // For same-origin, 'cors' mode is default and appropriate.
                     // HEAD request to the root of the deployment.
                     const response = await fetch(testUrl, { method: 'HEAD', cache: 'no-store' });
