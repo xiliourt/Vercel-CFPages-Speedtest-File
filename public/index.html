@@ -71,9 +71,9 @@
 
     <script>
         // Configuration
-        const LATENCY_TEST_URL = '/ping'; 
+        const LATENCY_TEST_URL = window.location.pathname + '/ping'; 
         const LATENCY_SAMPLES = 5; // Number of latency tests to average
-        const DOWNLOAD_FILE_URL = '/test-file-25mb.dat'; 
+        const DOWNLOAD_FILE_URL = window.location.pathname + '/test-file-25mb.dat'; 
         const DOWNLOAD_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 1MB. Adjust if your test file is different.
         const DOWNLOAD_SAMPLES = 1; // Number of download tests to average
 
